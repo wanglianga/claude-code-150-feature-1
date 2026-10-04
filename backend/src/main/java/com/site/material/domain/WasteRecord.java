@@ -44,7 +44,7 @@ public class WasteRecord {
     private Double unitPrice = 0d;
 
     /** BREAKAGE 瓷砖破损 / EXPIRED 砂浆过期 / STORAGE 保管不当 /
-     *  CONSTRUCTION 施工错误 / QUALITY 供应商质量 / OTHER */
+     *  CONSTRUCTION 施工错误 / QUALITY 供应商质量 / CUT 切割损耗(规格领错退换) / OTHER */
     @Column(nullable = false, length = 16)
     private String wasteType;
 
@@ -53,6 +53,9 @@ public class WasteRecord {
 
     /** 关联变更签证（设计变更类损耗） */
     private Long visaId;
+
+    /** 关联退换单（规格领错退换自动产生的切割损耗） */
+    private Long returnId;
 
     private String description;
     private String recorder;

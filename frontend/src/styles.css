@@ -249,3 +249,13 @@ label.fdd span { display: block; font-size: 12.5px; color: var(--ink-2); margin-
 .flow-steps .step { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--gray-bg); color: #64748b; }
 .flow-steps .step.on { background: var(--brand); color: #fff; font-weight: 600; }
 .flow-steps .arr { color: #cbd5e1; margin: 0 6px; }
+
+/* 规格领错退换：现场照片与领错提醒 */
+.photo-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.photo-cell { position: relative; width: 96px; }
+.photo-cell img { width: 96px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--gray-bg); display: block; cursor: zoom-in; }
+.photo-cell .del { position: absolute; top: -7px; right: -7px; width: 20px; height: 20px; border-radius: 50%; background: var(--red); color: #fff; border: none; font-size: 11px; cursor: pointer; line-height: 1; }
+.photo-cell .nm { font-size: 11px; color: var(--ink-2); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.photo-view { max-width: 100%; max-height: 70vh; border-radius: 10px; display: block; margin: 0 auto; }
+.warn-banner { background: var(--amber-bg); border: 1px solid #f59e0b55; color: #92400e; border-radius: 10px; padding: 10px 14px; font-size: 12.5px; line-height: 1.7; margin: 10px 0; }
+.warn-banner b { color: #78350f; }

@@ -6,7 +6,9 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.Base64;
 
 /**
  * 演示种子数据：覆盖入库质检、预算、领料（含夜间紧急）、退库（规格领错/变更/损坏）、
@@ -105,7 +107,7 @@ public class DataInitializer implements CommandLineRunner {
         MaterialBatch b5 = batch("RK20260926001", m5, "M5", s4, 80, 380, "PASSED",
                 20, 0, 0.5, 0, t(9, 26, 14));
         MaterialBatch b6 = batch("RK20260925001", m6, "DN20", s5, 3000, 3.5, "PASSED",
-                400, 50, 0, 0, t(9, 25, 11));
+                400, 130, 20, 0, t(9, 25, 11));
         MaterialBatch b7 = batch("RK20260925002", m7, "M10×80", s6, 5000, 1.2, "PASSED",
                 800, 0, 0, 0, t(9, 25, 11));
         MaterialBatch b8 = batch("RK20260920001", m8, "V型ABS", s7, 100, 28, "PASSED",
@@ -225,6 +227,25 @@ public class DataInitializer implements CommandLineRunner {
         retItem(t3, m4, b4, 3, "DAMAGED", 58);
         returnRepo.save(t3);
 
+        // 规格领错退换（已办结）：水电班申请单把 DN25 写成 DN20，现场无法安装；
+        // 未使用 80 米退回重新入库，已切割 20 米计损耗；责任判定为班组申请错误，成本归班组
+        MaterialReturn t4 = retDoc("TK20261003001", c5, r6.getId(), "1#楼", "标准层", "机电预埋",
+                "SPEC_WRONG", "CONFIRMED", "孙明", "周材料", t(10, 3, 9), t(10, 3, 11),
+                "电施-401 应为 DN25，申请误写 DN20；未使用 80 米退回，已切割 20 米计损耗");
+        t4.setFaultType("CREW");
+        retItem(t4, m6, b6, 80, 20, "GOOD", 3.5);
+        retPhoto(t4, "现场线管堆放.jpg", svgPhoto("DN20线管现场堆放", "#1d4ed8"));
+        retPhoto(t4, "已切割管段.jpg", svgPhoto("已切割DN20管段", "#b45309"));
+        returnRepo.save(t4);
+
+        // 规格领错退换（待仓管确认）：再次发现规格不符，发起退换待确认
+        MaterialReturn t5 = retDoc("TK20261004002", c5, r6.getId(), "1#楼", "标准层", "机电预埋",
+                "SPEC_WRONG", "SUBMITTED", "孙明", null, t(10, 4, 8), null,
+                "现场复核预埋图仍为 DN25，新领 DN20 无法安装，申请退换；部分管段已切割");
+        retItem(t5, m6, b6, 120, 30, "GOOD", 3.5);
+        retPhoto(t5, "无法安装现场.jpg", svgPhoto("DN20无法安装现场", "#0f766e"));
+        returnRepo.save(t5);
+
         // ---------- 损耗 ----------
         waste("SH20261002001", m4, b4, c3, "1#楼", "标准层", "墙地砖铺贴", 5, 58,
                 "BREAKAGE", "CREW", null, "切割/搬运破损 5 箱");
@@ -234,6 +255,25 @@ public class DataInitializer implements CommandLineRunner {
                 "QUALITY", "SUPPLIER", null, "补货批次厚度不达标，清退出场并向供应商索赔");
         waste("SH20261002004", m3, b3, c4, "1#楼", "地下室", "防水工程", 10, 32,
                 "OTHER", "DESIGN", v1.getId(), "设计变更导致已铺卷材拆除损耗");
+
+        // 规格领错退换自动产生的切割损耗（与 TK20261003001 联动，责任：班组申请错误）
+        WasteRecord w5 = new WasteRecord();
+        w5.setCode("SH20261003005");
+        w5.setMaterialId(m6.getId());
+        w5.setBatchId(b6.getId());
+        w5.setCrewId(c5.getId());
+        w5.setBuilding("1#楼");
+        w5.setArea("标准层");
+        w5.setProcess("机电预埋");
+        w5.setQty(20d);
+        w5.setUnitPrice(3.5);
+        w5.setWasteType("CUT");
+        w5.setResponsibility("CREW");
+        w5.setReturnId(t4.getId());
+        w5.setDescription("规格领错退换 TK20261003001：已切割 20 计入损耗（班组申请错误，成本归班组）");
+        w5.setRecorder("周材料");
+        w5.setCreatedTime(t(10, 3, 11));
+        wasteRepo.save(w5);
 
         // ---------- 盘点（账实不符，待调账） ----------
         StockCheck sc = new StockCheck();
@@ -381,14 +421,39 @@ public class DataInitializer implements CommandLineRunner {
 
     private void retItem(MaterialReturn doc, Material m, MaterialBatch b, double qty,
                          String condition, double price) {
+        retItem(doc, m, b, qty, 0, condition, price);
+    }
+
+    private void retItem(MaterialReturn doc, Material m, MaterialBatch b, double qty, double cutQty,
+                         String condition, double price) {
         ReturnItem i = new ReturnItem();
         i.setMaterialReturn(doc);
         i.setMaterialId(m.getId());
         i.setBatchId(b == null ? null : b.getId());
         i.setQty(qty);
+        i.setCutQty(cutQty);
         i.setConditionType(condition);
         i.setPrice(price);
         doc.getItems().add(i);
+    }
+
+    private void retPhoto(MaterialReturn doc, String name, String dataUrl) {
+        ReturnPhoto p = new ReturnPhoto();
+        p.setMaterialReturn(doc);
+        p.setName(name);
+        p.setDataUrl(dataUrl);
+        doc.getPhotos().add(p);
+    }
+
+    /** 生成演示用 SVG 现场照片（dataURL 形式，随退换单落库） */
+    private static String svgPhoto(String label, String color) {
+        String svg = "<svg xmlns='http://www.w3.org/2000/svg' width='320' height='200'>"
+                + "<rect width='320' height='200' fill='" + color + "'/>"
+                + "<rect x='14' y='14' width='292' height='172' fill='none' stroke='#ffffff' stroke-width='3'/>"
+                + "<text x='160' y='106' font-size='22' fill='#ffffff' text-anchor='middle'"
+                + " font-family='sans-serif'>" + label + "</text></svg>";
+        return "data:image/svg+xml;base64,"
+                + Base64.getEncoder().encodeToString(svg.getBytes(StandardCharsets.UTF_8));
     }
 
     private void waste(String code, Material m, MaterialBatch b, Crew crew, String building,

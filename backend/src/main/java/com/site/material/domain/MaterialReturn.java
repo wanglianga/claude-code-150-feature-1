@@ -42,6 +42,11 @@ public class MaterialReturn {
     @Column(nullable = false, length = 16)
     private String reasonType;
 
+    /** 规格领错责任判定（仓管确认时填写）：
+     *  WAREHOUSE 仓管发错（班组不扣款，损耗项目承担） / CREW 班组申请错误（成本归班组） */
+    @Column(length = 16)
+    private String faultType;
+
     /** SUBMITTED / CONFIRMED / REJECTED */
     @Column(nullable = false, length = 16)
     private String status = "SUBMITTED";
@@ -54,4 +59,8 @@ public class MaterialReturn {
 
     @OneToMany(mappedBy = "materialReturn", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ReturnItem> items = new ArrayList<>();
+
+    /** 现场照片（规格领错退换必传） */
+    @OneToMany(mappedBy = "materialReturn", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ReturnPhoto> photos = new ArrayList<>();
 }

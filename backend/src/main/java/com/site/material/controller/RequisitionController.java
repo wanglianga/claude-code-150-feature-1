@@ -37,6 +37,13 @@ public class RequisitionController {
         return service.preIssueCheck(id);
     }
 
+    /** 同班组历史"规格领错"记录：再次申请相同材料时前端弹提示 */
+    @GetMapping("/spec-wrong-alerts")
+    public List<Map<String, Object>> specWrongAlerts(@RequestParam Long crewId,
+                                                     @RequestParam(required = false) Long materialId) {
+        return service.specWrongAlerts(crewId, materialId);
+    }
+
     @PostMapping
     @PreAuthorize("hasAnyRole('FOREMAN','KEEPER','PM')")
     public Requisition create(@Valid @RequestBody RequisitionRequest req) {

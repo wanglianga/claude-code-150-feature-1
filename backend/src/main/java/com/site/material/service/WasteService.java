@@ -105,6 +105,7 @@ public class WasteService {
             x.put("wasteType", w.getWasteType());
             x.put("responsibility", w.getResponsibility());
             x.put("visaId", w.getVisaId());
+            x.put("returnId", w.getReturnId());
             x.put("description", w.getDescription());
             x.put("recorder", w.getRecorder());
             x.put("createdTime", w.getCreatedTime());

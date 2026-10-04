@@ -23,6 +23,14 @@ export default function Requisitions() {
     crewId: user.crewId || '', building: '1#楼', area: '', process: '', drawingNo: '',
     urgent: false, remark: '', items: [blankItem()]
   })
+  // 同班组历史"规格领错"记录：申请相同材料时提示
+  const [specAlerts, setSpecAlerts] = useState([])
+  useEffect(() => {
+    if (!showCreate || !form.crewId) { setSpecAlerts([]); return }
+    api.get(`/api/requisitions/spec-wrong-alerts?crewId=${form.crewId}`)
+      .then(setSpecAlerts).catch(() => setSpecAlerts([]))
+  }, [showCreate, form.crewId])
+  const alertOf = (materialId) => specAlerts.find((a) => a.materialId === Number(materialId))
 
   const load = () => {
     const q = new URLSearchParams()
@@ -177,6 +185,21 @@ export default function Requisitions() {
             placeholder="临时追加原因 / 施工进度说明" /></Field>
 
           <div style={{ margin: '8px 0 6px', fontWeight: 600 }}>领料明细</div>
+          {form.items.some((i) => alertOf(i.materialId)) && (
+            <div className="warn-banner">
+              <b>规格提醒：</b>该班组此前发生过规格领错退换，本次申请相同材料请核对图纸规格 —
+              {form.items.filter((i) => alertOf(i.materialId)).map((i) => {
+                const a = alertOf(i.materialId)
+                return (
+                  <div key={i.materialId}>
+                    ⚠️ <b>{a.materialName}</b>：{fmtTime(a.lastTime)} 退换单 {a.lastCode}
+                    （累计 {a.count} 次 / {fmt(a.totalQty)}{a.unit}，
+                    {a.lastFaultType === 'WAREHOUSE' ? '仓管发错' : '班组申请错误'}）
+                  </div>
+                )
+              })}
+            </div>
+          )}
           <table className="tbl">
             <thead><tr><th>材料</th><th style={{ width: 150 }}>申请数量</th><th style={{ width: 70 }}></th></tr></thead>
             <tbody>
@@ -191,6 +214,11 @@ export default function Requisitions() {
                     <option value="">请选择材料</option>
                     {meta.materials.map((m) => <option key={m.id} value={m.id}>[{m.category}] {m.name}（{m.unit}）</option>)}
                   </select>
+                  {alertOf(it.materialId) && (
+                    <span className="tag-mini" style={{ marginTop: 4, display: 'inline-block' }}>
+                      曾领错规格×{alertOf(it.materialId).count}
+                    </span>
+                  )}
                 </td>
                 <td><input type="number" value={it.applyQty} onChange={(e) => {
                   const items = form.items.slice()
@@ -228,7 +256,13 @@ export default function Requisitions() {
               <tbody>
               {pre.checks.map((c) => (
                 <tr key={c.itemId}>
-                  <td><b>{c.materialName}</b><div className="muted" style={{ fontSize: 12 }}>单位：{c.unit}</div></td>
+                  <td><b>{c.materialName}</b><div className="muted" style={{ fontSize: 12 }}>单位：{c.unit}</div>
+                    {c.specWrongCount > 0 && (
+                      <div style={{ marginTop: 3 }}>
+                        <span className="tag-mini">曾领错规格×{c.specWrongCount}，请核对</span>
+                      </div>
+                    )}
+                  </td>
                   <td className="num">{fmt(c.applyQty)}</td>
                   <td className="num">{fmt(c.budgetQty)}</td>
                   <td className="num">{fmt(c.alreadyIssued)}</td>

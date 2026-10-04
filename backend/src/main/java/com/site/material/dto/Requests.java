@@ -16,6 +16,7 @@ public final class Requests {
                          @NotNull @PositiveOrZero Double applyQty,
                          @PositiveOrZero Double issuedQty,
                          @PositiveOrZero Double qty,
+                         @PositiveOrZero Double cutQty,
                          String conditionType,
                          Double price) {}
 
@@ -34,6 +35,8 @@ public final class Requests {
 
     public record IssueRequest(@NotNull List<IssueItemIn> items, String remark) {}
 
+    public record PhotoIn(String name, @NotBlank String dataUrl) {}
+
     public record ReturnRequest(
             @NotNull Long crewId,
             Long requisitionId,
@@ -42,7 +45,11 @@ public final class Requests {
             String process,
             @NotBlank String reasonType,
             String remark,
+            List<PhotoIn> photos,
             @NotNull List<ItemIn> items) {}
+
+    /** 退库确认：规格领错退换必须给出责任判定 faultType（WAREHOUSE 仓管发错 / CREW 班组申请错误） */
+    public record ReturnConfirmRequest(String faultType, String remark) {}
 
     public record WasteRequest(
             @NotNull Long materialId,

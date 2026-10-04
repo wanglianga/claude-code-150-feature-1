@@ -1,6 +1,6 @@
 package com.site.material.controller;
 
-import com.site.material.domain.MaterialReturn;
+import com.site.material.dto.Requests.ReturnConfirmRequest;
 import com.site.material.dto.Requests.ReturnRequest;
 import com.site.material.service.ReturnService;
 import jakarta.validation.Valid;
@@ -26,21 +26,28 @@ public class ReturnController {
         return service.list(status, crewId);
     }
 
-    @PostMapping
-    @PreAuthorize("hasAnyRole('FOREMAN','KEEPER','PM')")
-    public MaterialReturn create(@Valid @RequestBody ReturnRequest req) {
-        return service.create(req);
+    @GetMapping("/{id}")
+    public Map<String, Object> detail(@PathVariable Long id) {
+        return service.view(service.get(id));
     }
 
+    @PostMapping
+    @PreAuthorize("hasAnyRole('FOREMAN','KEEPER','PM')")
+    public Map<String, Object> create(@Valid @RequestBody ReturnRequest req) {
+        return service.view(service.create(req));
+    }
+
+    /** 仓管确认：规格领错退换必须在 body 中给出 faultType（WAREHOUSE 仓管发错 / CREW 班组申请错误） */
     @PutMapping("/{id}/confirm")
     @PreAuthorize("hasAnyRole('KEEPER','PM')")
-    public MaterialReturn confirm(@PathVariable Long id) {
-        return service.confirm(id);
+    public Map<String, Object> confirm(@PathVariable Long id,
+                                       @RequestBody(required = false) ReturnConfirmRequest req) {
+        return service.view(service.confirm(id, req));
     }
 
     @PutMapping("/{id}/reject")
     @PreAuthorize("hasAnyRole('KEEPER','PM')")
-    public MaterialReturn reject(@PathVariable Long id) {
-        return service.reject(id);
+    public Map<String, Object> reject(@PathVariable Long id) {
+        return service.view(service.reject(id));
     }
 }

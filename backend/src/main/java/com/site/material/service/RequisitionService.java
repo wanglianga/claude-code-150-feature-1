@@ -25,16 +25,18 @@ public class RequisitionService {
     private final ProjectBudgetRepository budgetRepo;
     private final MaterialRepository materialRepo;
     private final CrewRepository crewRepo;
+    private final MaterialReturnRepository returnRepo;
     private final CodeGenerator codes;
 
     public RequisitionService(RequisitionRepository reqRepo, MaterialBatchRepository batchRepo,
                               ProjectBudgetRepository budgetRepo, MaterialRepository materialRepo,
-                              CrewRepository crewRepo, CodeGenerator codes) {
+                              CrewRepository crewRepo, MaterialReturnRepository returnRepo, CodeGenerator codes) {
         this.reqRepo = reqRepo;
         this.batchRepo = batchRepo;
         this.budgetRepo = budgetRepo;
         this.materialRepo = materialRepo;
         this.crewRepo = crewRepo;
+        this.returnRepo = returnRepo;
         this.codes = codes;
     }
 
@@ -71,6 +73,7 @@ public class RequisitionService {
         Requisition r = reqRepo.findByIdWithItems(id).orElseThrow(() -> new BusinessException("领料单不存在"));
         Map<Long, Material> mats = materialRepo.findAll().stream()
                 .collect(Collectors.toMap(Material::getId, Function.identity()));
+        Map<Long, Map<String, Object>> specWrong = specWrongByMaterial(r.getCrewId());
         List<Map<String, Object>> rows = new ArrayList<>();
         for (RequisitionItem it : r.getItems()) {
             Material m = mats.get(it.getMaterialId());
@@ -96,6 +99,11 @@ public class RequisitionService {
             row.put("onHandQty", MasterDataService.round(onHand));
             row.put("stockEnough", onHand + 1e-9 >= it.getApplyQty());
             row.put("overBudget", budgetQty > 0 && alreadyIssued + it.getApplyQty() > budgetQty + 1e-9);
+            // 同班组曾就该材料发生规格领错 -> 发料核对时提示复核规格
+            Map<String, Object> sw = specWrong.get(it.getMaterialId());
+            row.put("specWrongCount", sw == null ? 0 : sw.get("count"));
+            row.put("specWrongLastTime", sw == null ? null : sw.get("lastTime"));
+            row.put("specWrongFaultType", sw == null ? null : sw.get("lastFaultType"));
             row.put("batches", batches.stream().map(b -> Map.of(
                     "batchId", b.getId(), "batchNo", b.getBatchNo(),
                     "onHand", b.onHand(), "unitPrice", b.getUnitPrice(),
@@ -105,6 +113,48 @@ public class RequisitionService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("requisition", view(r));
         out.put("checks", rows);
+        return out;
+    }
+
+    /** 同班组历史"规格领错"退换记录（按材料聚合）：用于再次申请相同材料时的提醒 */
+    public List<Map<String, Object>> specWrongAlerts(Long crewId, Long materialId) {
+        Map<Long, Map<String, Object>> byMaterial = specWrongByMaterial(crewId);
+        return byMaterial.values().stream()
+                .filter(x -> materialId == null || materialId.equals(x.get("materialId")))
+                .toList();
+    }
+
+    /** 按材料聚合该班组已确认的规格领错退换：次数 / 累计数量 / 最近一次时间与责任判定 */
+    private Map<Long, Map<String, Object>> specWrongByMaterial(Long crewId) {
+        if (crewId == null) {
+            return Map.of();
+        }
+        Map<Long, String> matNames = materialRepo.findAll().stream()
+                .collect(Collectors.toMap(Material::getId, Material::getName));
+        Map<Long, String> units = materialRepo.findAll().stream()
+                .collect(Collectors.toMap(Material::getId, Material::getUnit));
+        Map<Long, Map<String, Object>> out = new LinkedHashMap<>();
+        for (MaterialReturn r : returnRepo.findConfirmedSpecWrongByCrew(crewId)) {
+            for (ReturnItem i : r.getItems()) {
+                Map<String, Object> x = out.computeIfAbsent(i.getMaterialId(), k -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("materialId", k);
+                    m.put("materialName", matNames.get(k));
+                    m.put("unit", units.get(k));
+                    m.put("count", 0);
+                    m.put("totalQty", 0d);
+                    return m;
+                });
+                x.put("count", (int) x.get("count") + 1);
+                x.put("totalQty", MasterDataService.round((double) x.get("totalQty")
+                        + (i.getQty() == null ? 0d : i.getQty())
+                        + (i.getCutQty() == null ? 0d : i.getCutQty())));
+                // 列表按 confirmTime 倒序，首次遇到即为最近一次
+                x.putIfAbsent("lastTime", r.getConfirmTime());
+                x.putIfAbsent("lastCode", r.getCode());
+                x.putIfAbsent("lastFaultType", r.getFaultType());
+            }
+        }
         return out;
     }
 

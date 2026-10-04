@@ -161,6 +161,7 @@ public class AnalyticsService {
                 "EXPIRED", "STORAGE",
                 "STORAGE", "STORAGE",
                 "CONSTRUCTION", "CONSTRUCTION",
+                "CUT", "CONSTRUCTION",
                 "QUALITY", "QUALITY");
 
         Map<String, double[]> causeAgg = new LinkedHashMap<>();

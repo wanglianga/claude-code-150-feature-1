@@ -19,4 +19,8 @@ public interface WasteRepository extends JpaRepository<WasteRecord, Long> {
     List<WasteRecord> findByCrewBetween(@Param("crewId") Long crewId,
                                         @Param("from") LocalDateTime from,
                                         @Param("to") LocalDateTime to);
+
+    List<WasteRecord> findByReturnId(Long returnId);
+
+    List<WasteRecord> findByReturnIdIn(List<Long> returnIds);
 }
