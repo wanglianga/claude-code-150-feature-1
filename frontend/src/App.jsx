@@ -9,6 +9,7 @@ import StockChecksPage from './pages/StockChecks.jsx'
 import BudgetsPage from './pages/Budgets.jsx'
 import RequisitionsPage from './pages/Requisitions.jsx'
 import ReturnsPage from './pages/Returns.jsx'
+import SpecExchangesPage from './pages/SpecExchanges.jsx'
 import WastesPage from './pages/Wastes.jsx'
 import VisasPage from './pages/Visas.jsx'
 import SettlementsPage from './pages/Settlements.jsx'
@@ -29,6 +30,7 @@ const NAV = [
   { group: '业务单据' },
   { path: '/requisitions', label: '领料单', icon: '📝', roles: ['*'], el: <RequisitionsPage /> },
   { path: '/returns', label: '退库单', icon: '↩️', roles: ['*'], el: <ReturnsPage /> },
+  { path: '/spec-exchanges', label: '规格领错退换', icon: '🔀', roles: ['*'], el: <SpecExchangesPage /> },
   { path: '/wastes', label: '损耗登记', icon: '⚠️', roles: ['ROLE_PM', 'ROLE_KEEPER', 'ROLE_FINANCE'], el: <WastesPage /> },
   { path: '/visas', label: '变更签证', icon: '🛠️', roles: ['ROLE_PM', 'ROLE_BUDGET', 'ROLE_KEEPER', 'ROLE_FINANCE'], el: <VisasPage /> },
   { path: '/budgets', label: '工程预算', icon: '📐', roles: ['ROLE_PM', 'ROLE_BUDGET', 'ROLE_KEEPER'], el: <BudgetsPage /> },

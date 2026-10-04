@@ -28,6 +28,10 @@ class MaterialFlowIntegrationTest {
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper om;
 
+    /** 测试用现场照片（1x1 像素 JPEG data URI） */
+    private static final String PHOTO =
+            "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAdEAABBAIDAAAAAAAAAAAAAAABAAIDBAUGByEx/9oACAEBAAA/AOkTv7//Z";
+
     private String token(String username, String password) throws Exception {
         String body = mvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -48,7 +52,7 @@ class MaterialFlowIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.rows[0].materialName").exists());
 
-        // 2. 待发料单：夜间紧急单（p3 机电班 DN20 600 米）核对，库存 2650（3000-400+50）
+        // 2. 待发料单：夜间紧急单（p3 机电班 DN20 600 米）核对，库存 2740（3000-400+50 退库+90 退换回补）
         JsonNode reqs = om.readTree(mvc.perform(get("/api/requisitions?status=SUBMITTED")
                         .header("Authorization", "Bearer " + keeper))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8));
@@ -125,6 +129,97 @@ class MaterialFlowIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CONFIRMED"));
 
+        // 5b. 规格领错退换料：仓管确认待处理单 TH20261003002（水电班申请 DN25 错误，未使用40/已切割10）
+        //     确认前 DN25 批次（materialId=10）库存 = 2000-50 = 1950
+        JsonNode exchanges = om.readTree(mvc.perform(get("/api/spec-exchanges?status=SUBMITTED")
+                        .header("Authorization", "Bearer " + keeper))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8));
+        long exId = -1;
+        for (JsonNode e : exchanges) {
+            if ("TH20261003002".equals(e.get("code").asText())) exId = e.get("id").asLong();
+        }
+        assertTrue(exId > 0, "种子数据应包含待确认的规格退换单");
+
+        // 未上传照片的退换申请应被拒绝
+        String noPhoto = om.writeValueAsString(Map.ofEntries(
+                Map.entry("crewId", 5), Map.entry("building", "1#楼"),
+                Map.entry("area", "标准层"), Map.entry("process", "机电预埋"),
+                Map.entry("materialId", 6), Map.entry("batchId", batchId),
+                Map.entry("wrongSpec", "DN20"), Map.entry("expectSpec", "DN25"),
+                Map.entry("issuedQty", 10d), Map.entry("unusedQty", 8d),
+                Map.entry("cutQty", 2d), Map.entry("photos", List.of())));
+        mvc.perform(post("/api/spec-exchanges")
+                        .header("Authorization", "Bearer " + foreman)
+                        .contentType(MediaType.APPLICATION_JSON).content(noPhoto))
+                .andExpect(status().isBadRequest());
+
+        // 未使用+已切割超过领出数量应被拦截
+        String tooMany = om.writeValueAsString(Map.ofEntries(
+                Map.entry("crewId", 5), Map.entry("building", "1#楼"),
+                Map.entry("area", "标准层"), Map.entry("process", "机电预埋"),
+                Map.entry("materialId", 6), Map.entry("wrongSpec", "DN20"),
+                Map.entry("expectSpec", "DN25"), Map.entry("issuedQty", 10d),
+                Map.entry("unusedQty", 9d), Map.entry("cutQty", 2d),
+                Map.entry("photos", List.of(PHOTO))));
+        mvc.perform(post("/api/spec-exchanges")
+                        .header("Authorization", "Bearer " + foreman)
+                        .contentType(MediaType.APPLICATION_JSON).content(tooMany))
+                .andExpect(status().isBadRequest());
+
+        // 仓管判定为班组申请错误：可退 40 米重新入库，切割 10 米成本归班组
+        JsonNode confirmed = om.readTree(mvc.perform(put("/api/spec-exchanges/" + exId + "/confirm")
+                        .header("Authorization", "Bearer " + keeper)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of(
+                                "responsibility", "CREW", "faultNote", "班组未按电气系统图申报规格"))))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8));
+        assertEquals("CONFIRMED", confirmed.get("status").asText());
+        assertEquals(40d, confirmed.get("unusedQty").asDouble(), 0.01);
+        assertEquals(10d, confirmed.get("cutQty").asDouble(), 0.01);
+        assertEquals(4.2d, confirmed.get("unitPrice").asDouble(), 0.01);
+        assertEquals(168d, confirmed.get("returnAmount").asDouble(), 0.01); // 40*4.2
+        assertEquals(42d, confirmed.get("cutAmount").asDouble(), 0.01);     // 10*4.2
+        assertTrue(confirmed.get("wasteId").asLong() > 0, "应生成切割损耗记录");
+        assertTrue(confirmed.get("photos").size() >= 1, "应回显现场照片");
+
+        // DN25 可用库存回补：1950 + 40 = 1990
+        JsonNode batches10 = om.readTree(mvc.perform(get("/api/batches?materialId=10")
+                        .header("Authorization", "Bearer " + keeper))
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8));
+        double onHand10 = 0;
+        for (JsonNode b : batches10) onHand10 += b.get("onHand").asDouble();
+        assertEquals(1990d, onHand10, 0.01, "可退部分应重新入库回补可用库存");
+
+        // 5c. 再发起一张仓管发错的退换：水电班领 DN20，未使用 8、切割 2，仓管判定 KEEPER
+        String keeperFault = om.writeValueAsString(Map.ofEntries(
+                Map.entry("crewId", 5), Map.entry("building", "1#楼"),
+                Map.entry("area", "标准层"), Map.entry("process", "机电预埋"),
+                Map.entry("materialId", 6), Map.entry("batchId", batchId),
+                Map.entry("wrongSpec", "DN20"), Map.entry("expectSpec", "DN25"),
+                Map.entry("issuedQty", 10d), Map.entry("unusedQty", 8d),
+                Map.entry("cutQty", 2d), Map.entry("photos", List.of(PHOTO)),
+                Map.entry("remark", "发料货位相邻拿错")));
+        JsonNode ex2 = om.readTree(mvc.perform(post("/api/spec-exchanges")
+                        .header("Authorization", "Bearer " + foreman)
+                        .contentType(MediaType.APPLICATION_JSON).content(keeperFault))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8));
+        mvc.perform(put("/api/spec-exchanges/" + ex2.get("id").asLong() + "/confirm")
+                        .header("Authorization", "Bearer " + keeper)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("responsibility", "KEEPER"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.responsibility").value("KEEPER"));
+
+        // 同班组再次申请 DN20（materialId=6）应提示曾经领错规格（种子 e1 + 新单共 2 条）
+        JsonNode warns = om.readTree(mvc.perform(get("/api/spec-exchanges/warnings?crewId=5&materialId=6")
+                        .header("Authorization", "Bearer " + foreman))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8));
+        assertEquals(2, warns.size(), "水电班 DN20 应有 2 条已确认领错记录");
+        // 班组长无权确认退换单
+        mvc.perform(put("/api/spec-exchanges/" + ex2.get("id").asLong() + "/reject")
+                        .header("Authorization", "Bearer " + foreman))
+                .andExpect(status().isForbidden());
+
         // 6. 盘点调账：种子盘点单确认后批次库存变化
         JsonNode checks = om.readTree(mvc.perform(get("/api/stock-checks")
                         .header("Authorization", "Bearer " + keeper))
@@ -142,13 +237,16 @@ class MaterialFlowIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON).content(genBody))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8));
         long settlementId = st.get("id").asLong();
-        // 机电班领用 400*3.5+800*1.2+紧急600*3.5 = 4460；退库 50*3.5+20*3.5 = 245
-        assertEquals(4460d, st.get("issuedAmount").asDouble(), 0.01);
-        assertEquals(245d, st.get("returnedAmount").asDouble(), 0.01);
-        assertEquals(4215d, st.get("consumedAmount").asDouble(), 0.01);
-        // 预算 2000*3.5 + 3000*1.2 = 10600；净消耗低于预算 => 偏差为负，扣款仅责任损耗 0
-        assertEquals(-6385d, st.get("varianceAmount").asDouble(), 0.01);
-        assertEquals(0d, st.get("deductionAmount").asDouble(), 0.01);
+        // 机电班领用 400*3.5+800*1.2+DN25 50*4.2+紧急600*3.5 = 4670
+        // 退库冲减：普通退库 (50+20)*3.5=245；规格退换可退回补 90*3.5+40*4.2+8*3.5=511；合计 756
+        assertEquals(4670d, st.get("issuedAmount").asDouble(), 0.01);
+        assertEquals(756d, st.get("returnedAmount").asDouble(), 0.01);
+        assertEquals(3914d, st.get("consumedAmount").asDouble(), 0.01);
+        // 预算 2000*3.5 + 3000*1.2 = 10600；净消耗低于预算 => 偏差为负
+        assertEquals(-6686d, st.get("varianceAmount").asDouble(), 0.01);
+        // 班组申请错误切割 10*4.2=42 计入班组责任损耗；仓管发错的切割（35+7）项目承担，不扣款
+        assertEquals(42d, st.get("crewWasteAmount").asDouble(), 0.01);
+        assertEquals(42d, st.get("deductionAmount").asDouble(), 0.01);
 
         // 财务确认核算单
         mvc.perform(put("/api/settlements/" + settlementId + "/confirm")

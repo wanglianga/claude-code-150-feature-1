@@ -15,6 +15,12 @@ import java.time.LocalDateTime;
 @Component
 public class DataInitializer implements CommandLineRunner {
 
+    /** 现场照片占位图（data URI，模拟班组长手机上传的切割/未使用照片） */
+    private static final String PHOTO_CUT =
+            "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMjAiIGhlaWdodD0iMjAwIj48cmVjdCB3aWR0aD0iMzIwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2U4ZTRkYSIvPjxyZWN0IHg9IjIwIiB5PSI3MCIgd2lkdGg9IjEyMCIgaGVpZ2h0PSIyNiIgZmlsbD0iI2M5YTM2YSIvPjxyZWN0IHg9IjIwIiB5PSIxMTAiIHdpZHRoPSI5MCIgaGVpZ2h0PSIyNiIgZmlsbD0iI2M5YTM2YSIvPjxyZWN0IHg9IjE1MCIgeT0iNjAiIHdpZHRoPSIxNTAiIGhlaWdodD0iMTIwIiBmaWxsPSIjZjdmNWVmIiBzdHJva2U9IiM4YTdhNTUiLz48dGV4dCB4PSIxNjAiIHk9IjkwIiBmb250LXNpemU9IjE0IiBmaWxsPSIjN2E1YzFlIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiI+RE4yMCBjdXQgcGllY2VzPC90ZXh0Pjx0ZXh0IHg9IjE2MCIgeT0iMTUwIiBmb250LXNpemU9IjEyIiBmaWxsPSIjYjAzYTJlIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiI+c3BlYyB3cm9uZywgY2Fubm90IGluc3RhbGw8L3RleHQ+PC9zdmc+";
+    private static final String PHOTO_UNUSED =
+            "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMjAiIGhlaWdodD0iMjAwIj48cmVjdCB3aWR0aD0iMzIwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2RmZTdlZSIvPjxjaXJjbGUgY3g9IjkwIiBjeT0iMTAwIiByPSI0NiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNWI3YTk5IiBzdHJva2Utd2lkdGg9IjEwIi8+PHJlY3QgeD0iMTYwIiB5PSI4MCIgd2lkdGg9IjEzMCIgaGVpZ2h0PSI0MCIgZmlsbD0iI2FlYzRkOCIvPjx0ZXh0IHg9IjE2MCIgeT0iMTUwIiBmb250LXNpemU9IjEzIiBmaWxsPSIjMmU1MDcwIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiI+dW51c2VkIEROMjAgcGlwZXMgeDg1PC90ZXh0Pjwvc3ZnPg==";
+
     private final UserRepository userRepo;
     private final CrewRepository crewRepo;
     private final SupplierRepository supplierRepo;
@@ -26,12 +32,14 @@ public class DataInitializer implements CommandLineRunner {
     private final WasteRepository wasteRepo;
     private final ChangeVisaRepository visaRepo;
     private final StockCheckRepository checkRepo;
+    private final SpecExchangeRepository exchangeRepo;
 
     public DataInitializer(UserRepository userRepo, CrewRepository crewRepo, SupplierRepository supplierRepo,
                            MaterialRepository materialRepo, MaterialBatchRepository batchRepo,
                            ProjectBudgetRepository budgetRepo, RequisitionRepository reqRepo,
                            MaterialReturnRepository returnRepo, WasteRepository wasteRepo,
-                           ChangeVisaRepository visaRepo, StockCheckRepository checkRepo) {
+                           ChangeVisaRepository visaRepo, StockCheckRepository checkRepo,
+                           SpecExchangeRepository exchangeRepo) {
         this.userRepo = userRepo;
         this.crewRepo = crewRepo;
         this.supplierRepo = supplierRepo;
@@ -43,6 +51,7 @@ public class DataInitializer implements CommandLineRunner {
         this.wasteRepo = wasteRepo;
         this.visaRepo = visaRepo;
         this.checkRepo = checkRepo;
+        this.exchangeRepo = exchangeRepo;
     }
 
     @Override
@@ -90,6 +99,8 @@ public class DataInitializer implements CommandLineRunner {
         Material m7 = material("膨胀螺栓", "五金", "M10×80", "套", 500d);
         Material m8 = material("安全帽", "安全防护用品", "V型ABS", "顶", 20d);
         Material m9 = material("密目安全网", "安全防护用品", "1.8×6m", "张", 20d);
+        // 同系列不同规格线管：水电班预埋同时用到 DN20/DN25，领错规格即无法安装
+        Material m10 = material("PVC穿线管", "线管", "DN25", "米", 300d);
 
         // ---------- 入库批次 ----------
         MaterialBatch b1 = batch("RK20260928001", m1, "Φ20", s1, 50, 4200, "PASSED",
@@ -112,6 +123,8 @@ public class DataInitializer implements CommandLineRunner {
                 10, 0, 0, 0, t(9, 20, 9));
         MaterialBatch b9 = batch("RK20260920002", m9, "1.8×6m", s7, 200, 45, "CONDITIONAL",
                 30, 0, 0, 0, t(9, 20, 9));
+        MaterialBatch b10 = batch("RK20260925003", m10, "DN25", s5, 2000, 4.2, "PASSED",
+                50, 0, 0, 0, t(9, 25, 11));
 
         // ---------- 预算（楼栋/区域/工序/图纸） ----------
         budget("1#楼", "A区", "主体结构", "结施-101", m1, 20, 4200, c1);
@@ -167,6 +180,12 @@ public class DataInitializer implements CommandLineRunner {
                 "ISSUED", false, "赵磊", "周材料", t(10, 2, 9), t(10, 2, 10));
         item(r8, m9, b9, 30, 30, 45);
         saveReq(r8);
+
+        // 水电班另领 DN25 线管（后发现图纸该回路应为 DN20，申请错误，发起退换）
+        Requisition r9 = requisition("LL20261002009", c5, "1#楼", "标准层", "机电预埋", "电施-401",
+                "ISSUED", false, "孙明", "周材料", t(10, 2, 14), t(10, 2, 15));
+        item(r9, m10, b10, 50, 50, 4.2);
+        saveReq(r9);
 
         // ---------- 待发料（含超预算、夜间紧急） ----------
         Requisition p1 = requisition("LL20261003009", c1, "1#楼", "A区", "主体结构", "结施-101",
@@ -234,6 +253,76 @@ public class DataInitializer implements CommandLineRunner {
                 "QUALITY", "SUPPLIER", null, "补货批次厚度不达标，清退出场并向供应商索赔");
         waste("SH20261002004", m3, b3, c4, "1#楼", "地下室", "防水工程", 10, 32,
                 "OTHER", "DESIGN", v1.getId(), "设计变更导致已铺卷材拆除损耗");
+
+        // ---------- 规格领错退换料 ----------
+        // ① 已确认：水电班领走 DN20 线管（该回路需 DN25），仓管核对后判定为发料时拿错规格（仓管发错）。
+        //    未使用 90 米重新入库，已切割 10 米计损耗、项目承担，班组不扣款。
+        SpecExchange e1 = new SpecExchange();
+        e1.setCode("TH20261002001");
+        e1.setCrewId(c5.getId());
+        e1.setBuilding("1#楼");
+        e1.setArea("标准层");
+        e1.setProcess("机电预埋");
+        e1.setMaterialId(m6.getId());
+        e1.setBatchId(b6.getId());
+        e1.setWrongSpec("DN20");
+        e1.setExpectSpec("DN25");
+        e1.setIssuedQty(100d);
+        e1.setUnusedQty(90d);
+        e1.setCutQty(10d);
+        e1.setPhoto1(PHOTO_CUT);
+        e1.setPhoto2(PHOTO_UNUSED);
+        e1.setStatus("CONFIRMED");
+        e1.setResponsibility("KEEPER");
+        e1.setFaultNote("发料时相邻规格货位拿错，仓管承担");
+        e1.setApplicant("孙明");
+        e1.setConfirmedBy("周材料");
+        e1.setApplyTime(t(10, 2, 10));
+        e1.setConfirmTime(t(10, 2, 11));
+        e1.setRemark("现场无法安装，整段退回并附切割/未使用照片");
+        // 可退部分回补 b6（与确认逻辑同口径：qtyReturned +90）
+        b6.setQtyReturned(b6.getQtyReturned() + 90);
+        batchRepo.save(b6);
+        // 已切割部分损耗：仓管发错 -> COMPANY，不扣班组
+        WasteRecord sw1 = new WasteRecord();
+        sw1.setCode("SH20261002005");
+        sw1.setMaterialId(m6.getId());
+        sw1.setCrewId(c5.getId());
+        sw1.setBuilding("1#楼");
+        sw1.setArea("标准层");
+        sw1.setProcess("机电预埋");
+        sw1.setQty(10d);
+        sw1.setUnitPrice(3.5d);
+        sw1.setWasteType("SPEC_CUT");
+        sw1.setResponsibility("COMPANY");
+        sw1.setDescription("规格领错已切割报废（退换单 TH20261002001，实收 DN20 / 需用 DN25）：仓管发错，项目承担、班组不扣款");
+        sw1.setRecorder("周材料");
+        sw1.setCreatedTime(t(10, 2, 11));
+        wasteRepo.save(sw1);
+        e1.setWasteId(sw1.getId());
+        exchangeRepo.save(e1);
+
+        // ② 待仓管确认：水电班申请的 DN25 与图纸回路不符（班组申请错误），未使用 40 米、已切割 10 米
+        SpecExchange e2 = new SpecExchange();
+        e2.setCode("TH20261003002");
+        e2.setCrewId(c5.getId());
+        e2.setRequisitionId(r9.getId());
+        e2.setBuilding("1#楼");
+        e2.setArea("标准层");
+        e2.setProcess("机电预埋");
+        e2.setMaterialId(m10.getId());
+        e2.setBatchId(b10.getId());
+        e2.setWrongSpec("DN25");
+        e2.setExpectSpec("DN20");
+        e2.setIssuedQty(50d);
+        e2.setUnusedQty(40d);
+        e2.setCutQty(10d);
+        e2.setPhoto1(PHOTO_CUT);
+        e2.setStatus("SUBMITTED");
+        e2.setApplicant("孙明");
+        e2.setApplyTime(t(10, 3, 8));
+        e2.setRemark("班组长按电气系统图申报规格有误，待仓管现场核对后判定责任");
+        exchangeRepo.save(e2);
 
         // ---------- 盘点（账实不符，待调账） ----------
         StockCheck sc = new StockCheck();

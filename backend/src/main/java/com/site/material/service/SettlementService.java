@@ -29,12 +29,15 @@ public class SettlementService {
     private final ChangeVisaRepository visaRepo;
     private final ProjectBudgetRepository budgetRepo;
     private final CrewRepository crewRepo;
+    private final SpecExchangeRepository exchangeRepo;
+    private final MaterialBatchRepository batchRepo;
     private final CodeGenerator codes;
 
     public SettlementService(SettlementRepository settlementRepo, RequisitionRepository reqRepo,
                              MaterialReturnRepository returnRepo, WasteRepository wasteRepo,
                              ChangeVisaRepository visaRepo, ProjectBudgetRepository budgetRepo,
-                             CrewRepository crewRepo, CodeGenerator codes) {
+                             CrewRepository crewRepo, SpecExchangeRepository exchangeRepo,
+                             MaterialBatchRepository batchRepo, CodeGenerator codes) {
         this.settlementRepo = settlementRepo;
         this.reqRepo = reqRepo;
         this.returnRepo = returnRepo;
@@ -42,6 +45,8 @@ public class SettlementService {
         this.visaRepo = visaRepo;
         this.budgetRepo = budgetRepo;
         this.crewRepo = crewRepo;
+        this.exchangeRepo = exchangeRepo;
+        this.batchRepo = batchRepo;
         this.codes = codes;
     }
 
@@ -84,6 +89,26 @@ public class SettlementService {
                     damagedAmount += amt;
                 }
             }
+        }
+
+        // 规格领错退换：未使用部分已重新入库，按原领出单价冲减消耗；
+        // 已切割部分在确认时已生成损耗记录（CREW/COMPANY），随下面的损耗口径归属，不重复计。
+        Map<Long, Double> batchPrice = new HashMap<>();
+        for (com.site.material.domain.SpecExchange e :
+                exchangeRepo.findConfirmedByCrewBetween(crewId, from, to)) {
+            if (e.getUnusedQty() <= 0) continue;
+            double price = 0d;
+            if (e.getRequisitionId() != null) {
+                price = reqRepo.findByIdWithItems(e.getRequisitionId()).stream()
+                        .flatMap(r -> r.getItems().stream())
+                        .filter(i -> i.getMaterialId().equals(e.getMaterialId()))
+                        .map(RequisitionItem::getIssuePrice).findFirst().orElse(0d);
+            }
+            if (price == 0d && e.getBatchId() != null) {
+                price = batchPrice.computeIfAbsent(e.getBatchId(),
+                        bid -> batchRepo.findById(bid).map(MaterialBatch::getUnitPrice).orElse(0d));
+            }
+            returnedAmount += e.getUnusedQty() * price;
         }
 
         double consumed = issuedAmount - returnedAmount;

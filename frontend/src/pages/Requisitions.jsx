@@ -23,6 +23,15 @@ export default function Requisitions() {
     crewId: user.crewId || '', building: '1#楼', area: '', process: '', drawingNo: '',
     urgent: false, remark: '', items: [blankItem()]
   })
+  // 同班组历史领错预警：{ [materialId]: [{code, wrongSpec, expectSpec, ...}] }
+  const [specWarns, setSpecWarns] = useState({})
+
+  const loadSpecWarn = (crewId, materialId) => {
+    if (!crewId || !materialId) return
+    api.get(`/api/spec-exchanges/warnings?crewId=${crewId}&materialId=${materialId}`)
+      .then((list) => setSpecWarns((prev) => ({ ...prev, [materialId]: list })))
+      .catch(() => {})
+  }
 
   const load = () => {
     const q = new URLSearchParams()
@@ -32,6 +41,12 @@ export default function Requisitions() {
     api.get('/api/requisitions?' + q.toString()).then(setRows)
   }
   useEffect(() => { load() }, [status, crewFilter])
+
+  // 打开新建弹窗或班组变化时，为已填材料拉取领错预警
+  useEffect(() => {
+    if (!showCreate || !form.crewId) return
+    form.items.forEach((i) => i.materialId && loadSpecWarn(form.crewId, i.materialId))
+  }, [showCreate, form.crewId])
 
   const openPrecheck = async (r) => {
     try {
@@ -73,14 +88,17 @@ export default function Requisitions() {
     if (!form.crewId || !form.process) return toast('请选择班组并填写工序', 'err')
     if (form.items.some((i) => !i.materialId || !i.applyQty)) return toast('请完善领料明细', 'err')
     try {
-      await api.post('/api/requisitions', {
+      const res = await api.post('/api/requisitions', {
         ...form,
         crewId: Number(form.crewId),
         items: form.items.map((i) => ({ materialId: Number(i.materialId), applyQty: Number(i.applyQty) }))
       })
       toast('领料申请已提交')
+      ;(res?.specWarnings || []).forEach((w) =>
+        toast(`⚠️ ${w.materialName}：该班组曾领错规格 ${w.wrongCount} 次（最近 ${w.latestCode}，实收 ${w.wrongSpec}），发料请重点核对`, 'info'))
       setShowCreate(false)
       setForm({ ...form, items: [blankItem()] })
+      setSpecWarns({})
       load()
     } catch (e) { toast(e.message, 'err') }
   }
@@ -180,17 +198,27 @@ export default function Requisitions() {
           <table className="tbl">
             <thead><tr><th>材料</th><th style={{ width: 150 }}>申请数量</th><th style={{ width: 70 }}></th></tr></thead>
             <tbody>
-            {form.items.map((it, idx) => (
-              <tr key={idx}>
+            {form.items.map((it, idx) => {
+              const warns = specWarns[it.materialId] || []
+              return (
+              <React.Fragment key={idx}>
+                <tr>
                 <td>
                   <select value={it.materialId} onChange={(e) => {
                     const items = form.items.slice()
                     items[idx] = { ...items[idx], materialId: e.target.value }
                     setForm({ ...form, items })
+                    loadSpecWarn(form.crewId, e.target.value)
                   }}>
                     <option value="">请选择材料</option>
                     {meta.materials.map((m) => <option key={m.id} value={m.id}>[{m.category}] {m.name}（{m.unit}）</option>)}
                   </select>
+                  {warns.length > 0 && (
+                    <div className="spec-warn">
+                      ⚠️ 该班组曾领错此材料规格 {warns.length} 次：最近 {warns[0].wrongSpec || '错误规格'}
+                      {warns[0].expectSpec ? `（应为 ${warns[0].expectSpec}）` : ''}，请核对图纸规格
+                    </div>
+                  )}
                 </td>
                 <td><input type="number" value={it.applyQty} onChange={(e) => {
                   const items = form.items.slice()
@@ -200,8 +228,10 @@ export default function Requisitions() {
                 <td>{form.items.length > 1 && (
                   <button className="btn sm danger" onClick={() => setForm({ ...form, items: form.items.filter((_, i) => i !== idx) })}>删</button>
                 )}</td>
-              </tr>
-            ))}
+                </tr>
+              </React.Fragment>
+              )
+            })}
             </tbody>
           </table>
           <button className="btn" style={{ marginTop: 10 }} onClick={() => setForm({ ...form, items: [...form.items, blankItem()] })}>＋ 增加材料</button>
@@ -236,6 +266,17 @@ export default function Requisitions() {
                   <td>
                     {!c.stockEnough ? <Badge status="FAILED" label="库存不足" /> : <Badge status="PASSED" label="库存充足" />}
                     {c.overBudget && <div style={{ marginTop: 4 }}><Badge status="SUBMITTED" label="超预算" tone="red" /></div>}
+                    {c.specWrongWarn && (
+                      <div style={{ marginTop: 6 }}>
+                        <Badge status="SUBMITTED"
+                          label={`⚠️ 该班组曾领错此规格 ${c.specWrongWarn.wrongCount} 次（${c.specWrongWarn.latestCode}）`}
+                          tone="red" />
+                        <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
+                          上次实收 {c.specWrongWarn.wrongSpec}
+                          {c.specWrongWarn.expectSpec ? ` / 应为 ${c.specWrongWarn.expectSpec}` : ''}，发料前请再次核对规格
+                        </div>
+                      </div>
+                    )}
                   </td>
                   <td style={{ minWidth: 200 }}>
                     <select value={issueRows[c.itemId]?.batchId || ''}

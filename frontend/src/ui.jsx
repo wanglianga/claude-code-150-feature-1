@@ -23,10 +23,15 @@ export const STATUS_TONE = {
 export const QC_LABEL = { PENDING: '待检', PASSED: '合格', FAILED: '不合格', CONDITIONAL: '让步接收' }
 export const WASTE_TYPE = {
   BREAKAGE: '瓷砖/材料破损', EXPIRED: '砂浆过期', STORAGE: '保管不当',
-  CONSTRUCTION: '施工错误', QUALITY: '供应商质量', OTHER: '其他'
+  CONSTRUCTION: '施工错误', QUALITY: '供应商质量', SPEC_CUT: '规格领错已切割', OTHER: '其他'
 }
 export const RESPONSIBILITY = {
   CREW: '班组责任', SUPPLIER: '供应商责任', DESIGN: '设计变更', COMPANY: '项目承担', NATURE: '不可抗力'
+}
+/** 规格领错退换的责任方 */
+export const EXCHANGE_RESP = {
+  KEEPER: '仓管发错（班组不扣款）',
+  CREW: '班组申请错误（成本归班组）'
 }
 export const RETURN_REASON = {
   SPEC_WRONG: '规格领错', SURPLUS: '临时追加多余', CHANGE: '施工变更', OTHER: '其他'

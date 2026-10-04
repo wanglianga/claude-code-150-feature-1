@@ -39,7 +39,7 @@ public class RequisitionController {
 
     @PostMapping
     @PreAuthorize("hasAnyRole('FOREMAN','KEEPER','PM')")
-    public Requisition create(@Valid @RequestBody RequisitionRequest req) {
+    public Map<String, Object> create(@Valid @RequestBody RequisitionRequest req) {
         return service.create(req);
     }
 

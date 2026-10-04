@@ -10,7 +10,7 @@ export default function WasteReview() {
 
   const detail = useMemo(() => (data?.detail || []).filter((d) => !cause || d.cause === cause), [data, cause])
   const maxAmount = Math.max(1, ...(data?.summary || []).map((s) => s.amount))
-  const colors = { DESIGN: '#1d4ed8', CONSTRUCTION: '#dc2626', STORAGE: '#d97706', QUALITY: '#92400e', OTHER: '#64748b' }
+  const colors = { SPEC: '#7c3aed', DESIGN: '#1d4ed8', CONSTRUCTION: '#dc2626', STORAGE: '#d97706', QUALITY: '#92400e', OTHER: '#64748b' }
 
   return (
     <div>
@@ -23,7 +23,7 @@ export default function WasteReview() {
         { label: '损耗总额', value: fmt(data?.totalAmount) + ' 元', tone: 'brand' }
       ])} />
 
-      <Card title="损耗原因结构（月底复盘）" hint="区分损耗来源：设计变更 / 施工错误 / 保管不当 / 供应商质量">
+      <Card title="损耗原因结构（月底复盘）" hint="区分损耗来源：规格领错 / 设计变更 / 施工错误 / 保管不当 / 供应商质量">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {(data?.summary || []).map((s) => (
             <div key={s.cause} style={{ display: 'grid', gridTemplateColumns: '110px 1fr 130px 50px', gap: 12, alignItems: 'center' }}>
@@ -41,6 +41,7 @@ export default function WasteReview() {
         </div>
         <div className="kpi-note" style={{ marginTop: 16 }}>
           复盘结论建议：<br />
+          · <b>规格领错</b>已切割部分按责任归属：仓管发错不扣班组，班组申报错误计入班组扣款，同班组再领同材料系统自动预警；<br />
           · <b>设计变更</b>导致的拆除/报废 → 走变更签证向业主索赔，不计班组责任；<br />
           · <b>施工错误/瓷砖破损</b> → 班组责任，纳入月度扣款并加强交底；<br />
           · <b>保管不当/砂浆过期</b> → 材料员与班组共同整改堆放与领用节奏（随用随领）；<br />

@@ -29,12 +29,14 @@ public class AnalyticsService {
     private final CrewRepository crewRepo;
     private final ChangeVisaRepository visaRepo;
     private final SettlementRepository settlementRepo;
+    private final SpecExchangeRepository exchangeRepo;
 
     public AnalyticsService(RequisitionRepository reqRepo, MaterialReturnRepository returnRepo,
                             WasteRepository wasteRepo, MaterialBatchRepository batchRepo,
                             ProjectBudgetRepository budgetRepo, MaterialRepository materialRepo,
                             SupplierRepository supplierRepo, CrewRepository crewRepo,
-                            ChangeVisaRepository visaRepo, SettlementRepository settlementRepo) {
+                            ChangeVisaRepository visaRepo, SettlementRepository settlementRepo,
+                            SpecExchangeRepository exchangeRepo) {
         this.reqRepo = reqRepo;
         this.returnRepo = returnRepo;
         this.wasteRepo = wasteRepo;
@@ -45,6 +47,7 @@ public class AnalyticsService {
         this.crewRepo = crewRepo;
         this.visaRepo = visaRepo;
         this.settlementRepo = settlementRepo;
+        this.exchangeRepo = exchangeRepo;
     }
 
     private record Key(String building, String process, Long crewId, Long materialId) {}
@@ -83,6 +86,31 @@ public class AnalyticsService {
                 a[2] += i.getQty();
                 a[3] += i.getQty() * nz(i.getPrice());
             }
+        }
+        // 规格领错退换：未使用部分回补库存，并入退库口径；已切割部分已生成损耗记录，随损耗口径统计
+        Map<Long, Double> batchPriceMap = new HashMap<>();
+        for (com.site.material.domain.SpecExchange e : exchangeRepo.findAllByOrderByConfirmTimeDesc()) {
+            if (!"CONFIRMED".equals(e.getStatus())) continue;
+            if (building != null && !building.equals(e.getBuilding())) continue;
+            if (process != null && !process.equals(e.getProcess())) continue;
+            if (crewId != null && !crewId.equals(e.getCrewId())) continue;
+            if (e.getUnusedQty() <= 0) continue;
+            double price = 0d;
+            if (e.getRequisitionId() != null) {
+                price = reqRepo.findByIdWithItems(e.getRequisitionId()).stream()
+                        .flatMap(r -> r.getItems().stream())
+                        .filter(i -> i.getMaterialId().equals(e.getMaterialId()))
+                        .map(RequisitionItem::getIssuePrice).findFirst().orElse(0d);
+            }
+            if (price == 0d && e.getBatchId() != null) {
+                final Long bid = e.getBatchId();
+                price = batchPriceMap.computeIfAbsent(bid,
+                        x -> batchRepo.findById(bid).map(MaterialBatch::getUnitPrice).orElse(0d));
+            }
+            Key k = new Key(e.getBuilding(), e.getProcess(), e.getCrewId(), e.getMaterialId());
+            double[] a = agg.computeIfAbsent(k, x -> new double[6]);
+            a[2] += e.getUnusedQty();
+            a[3] += e.getUnusedQty() * price;
         }
         for (WasteRecord w : wasteRepo.findAllByOrderByCreatedTimeDesc()) {
             if (building != null && !building.equals(w.getBuilding())) continue;
@@ -151,8 +179,9 @@ public class AnalyticsService {
         Map<Long, String> crewNames = crewRepo.findAll().stream()
                 .collect(Collectors.toMap(Crew::getId, Crew::getName));
 
-        String[] causeOrder = {"DESIGN", "CONSTRUCTION", "STORAGE", "QUALITY", "OTHER"};
+        String[] causeOrder = {"SPEC", "DESIGN", "CONSTRUCTION", "STORAGE", "QUALITY", "OTHER"};
         Map<String, String> causeName = Map.of(
+                "SPEC", "规格领错",
                 "DESIGN", "设计变更", "CONSTRUCTION", "施工错误",
                 "STORAGE", "保管不当", "QUALITY", "供应商质量", "OTHER", "其他");
         // 损耗类型 -> 复盘原因归类
@@ -161,14 +190,16 @@ public class AnalyticsService {
                 "EXPIRED", "STORAGE",
                 "STORAGE", "STORAGE",
                 "CONSTRUCTION", "CONSTRUCTION",
-                "QUALITY", "QUALITY");
+                "QUALITY", "QUALITY",
+                "SPEC_CUT", "SPEC");
 
         Map<String, double[]> causeAgg = new LinkedHashMap<>();
         for (String c : causeOrder) causeAgg.put(c, new double[2]); // 次数, 金额
         List<Map<String, Object>> detail = new ArrayList<>();
         for (WasteRecord w : wastes) {
             String cause;
-            if ("DESIGN".equals(w.getResponsibility())) cause = "DESIGN";
+            if ("SPEC_CUT".equals(w.getWasteType())) cause = "SPEC";
+            else if ("DESIGN".equals(w.getResponsibility())) cause = "DESIGN";
             else if ("SUPPLIER".equals(w.getResponsibility())) cause = "QUALITY";
             else cause = typeToCause.getOrDefault(w.getWasteType(), "OTHER");
             double amount = w.getQty() * nz(w.getUnitPrice());

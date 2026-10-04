@@ -25,21 +25,24 @@ public class RequisitionService {
     private final ProjectBudgetRepository budgetRepo;
     private final MaterialRepository materialRepo;
     private final CrewRepository crewRepo;
+    private final SpecExchangeRepository exchangeRepo;
     private final CodeGenerator codes;
 
     public RequisitionService(RequisitionRepository reqRepo, MaterialBatchRepository batchRepo,
                               ProjectBudgetRepository budgetRepo, MaterialRepository materialRepo,
-                              CrewRepository crewRepo, CodeGenerator codes) {
+                              CrewRepository crewRepo, SpecExchangeRepository exchangeRepo,
+                              CodeGenerator codes) {
         this.reqRepo = reqRepo;
         this.batchRepo = batchRepo;
         this.budgetRepo = budgetRepo;
         this.materialRepo = materialRepo;
         this.crewRepo = crewRepo;
+        this.exchangeRepo = exchangeRepo;
         this.codes = codes;
     }
 
     @Transactional
-    public Requisition create(RequisitionRequest req) {
+    public Map<String, Object> create(RequisitionRequest req) {
         if (req.items() == null || req.items().isEmpty()) {
             throw new BusinessException("领料明细不能为空");
         }
@@ -63,7 +66,37 @@ public class RequisitionService {
             item.setApplyQty(it.applyQty());
             r.getItems().add(item);
         }
-        return reqRepo.save(r);
+        Requisition saved = reqRepo.save(r);
+
+        // 同班组申请相同材料：提示曾经领错规格（仓管发料时可重点核对规格）
+        Map<Long, Material> mats = materialRepo.findAll().stream()
+                .collect(Collectors.toMap(Material::getId, Function.identity()));
+        List<Map<String, Object>> specWarnings = new ArrayList<>();
+        for (RequisitionItem it : saved.getItems()) {
+            long wrongCount = exchangeRepo.findByCrewIdAndStatusOrderByConfirmTimeDesc(
+                            saved.getCrewId(), "CONFIRMED").stream()
+                    .filter(e -> e.getMaterialId().equals(it.getMaterialId()))
+                    .count();
+            if (wrongCount > 0) {
+                Material m = mats.get(it.getMaterialId());
+                SpecExchange latest = exchangeRepo.findByCrewIdAndStatusOrderByConfirmTimeDesc(
+                                saved.getCrewId(), "CONFIRMED").stream()
+                        .filter(e -> e.getMaterialId().equals(it.getMaterialId()))
+                        .findFirst().orElse(null);
+                Map<String, Object> w = new LinkedHashMap<>();
+                w.put("materialId", it.getMaterialId());
+                w.put("materialName", m == null ? null : m.getName());
+                w.put("wrongCount", wrongCount);
+                w.put("latestCode", latest == null ? null : latest.getCode());
+                w.put("wrongSpec", latest == null ? null : latest.getWrongSpec());
+                w.put("expectSpec", latest == null ? null : latest.getExpectSpec());
+                specWarnings.add(w);
+            }
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("requisition", view(saved));
+        out.put("specWarnings", specWarnings);
+        return out;
     }
 
     /** 发料前核对：预算量、已领量、现场库存（给前端展示核对结果，不直接改库存） */
@@ -100,6 +133,20 @@ public class RequisitionService {
                     "batchId", b.getId(), "batchNo", b.getBatchNo(),
                     "onHand", b.onHand(), "unitPrice", b.getUnitPrice(),
                     "qcStatus", b.getQcStatus())).toList());
+            List<SpecExchange> wrongs = exchangeRepo
+                    .findByCrewIdAndStatusOrderByConfirmTimeDesc(r.getCrewId(), "CONFIRMED").stream()
+                    .filter(e -> e.getMaterialId().equals(it.getMaterialId()))
+                    .toList();
+            if (!wrongs.isEmpty()) {
+                SpecExchange latest = wrongs.get(0);
+                Map<String, Object> warn = new LinkedHashMap<>();
+                warn.put("wrongCount", wrongs.size());
+                warn.put("latestCode", latest.getCode());
+                warn.put("wrongSpec", latest.getWrongSpec());
+                warn.put("expectSpec", latest.getExpectSpec());
+                warn.put("responsibility", latest.getResponsibility());
+                row.put("specWrongWarn", warn);
+            }
             rows.add(row);
         }
         Map<String, Object> out = new LinkedHashMap<>();

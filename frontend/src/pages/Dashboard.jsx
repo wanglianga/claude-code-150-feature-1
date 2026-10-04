@@ -104,10 +104,11 @@ export default function Dashboard() {
               </div>
             </>}
             {user.role === 'ROLE_FOREMAN' && <>
-              <div>班组长可提交领料申请（含夜间紧急）、办理退库，并查看本班组材料成本。</div>
+              <div>班组长可提交领料申请（含夜间紧急）、办理退库、现场发现规格不对时发起退换（上传未使用/已切割数量与照片），并查看本班组材料成本。</div>
               <div className="btn-row" style={{ marginTop: 10 }}>
                 <button className="btn primary" onClick={() => go('/requisitions')}>申请领料</button>
                 <button className="btn" onClick={() => go('/returns')}>办理退库</button>
+                <button className="btn" onClick={() => go('/spec-exchanges')}>规格领错退换</button>
                 <button className="btn" onClick={() => go('/settlements')}>本班组核算</button>
               </div>
             </>}

@@ -104,4 +104,24 @@ public final class Requests {
     public record CrewRequest(@NotBlank String name, String leader, String trade) {}
 
     public record GenerateSettlementRequest(String period, Long crewId) {}
+
+    public record SpecExchangeRequest(
+            @NotNull Long crewId,
+            Long requisitionId,
+            @NotBlank String building,
+            String area,
+            String process,
+            @NotNull Long materialId,
+            Long batchId,
+            String wrongSpec,
+            String expectSpec,
+            @NotNull @PositiveOrZero Double issuedQty,
+            @NotNull @PositiveOrZero Double unusedQty,
+            @NotNull @PositiveOrZero Double cutQty,
+            List<String> photos,
+            String remark) {}
+
+    public record SpecExchangeConfirmRequest(
+            @NotBlank String responsibility,
+            String faultNote) {}
 }
